@@ -137,11 +137,5 @@ fun FormularioEquipo(
             },
             habilitado = !estado.guardando
         )
-
-        Text(
-            "Los datos se almacenan localmente en SQLite.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }

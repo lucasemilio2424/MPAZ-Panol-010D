@@ -34,7 +34,7 @@ fun Catalogo(
                 equipo.categoria.contains(busqueda, ignoreCase = true) ||
                 equipo.ubicacion.contains(busqueda, ignoreCase = true)
 
-        coincide && (!soloDisponibles || equipo.stockDisponible > 0)
+        coincide && (!soloDisponibles || (equipo.stockDisponible > 0 && equipo.estado == "DISPONIBLE"))
     }.sortedBy { it.nombre }
 
     Pantalla("Catálogo de equipos", onBack) {

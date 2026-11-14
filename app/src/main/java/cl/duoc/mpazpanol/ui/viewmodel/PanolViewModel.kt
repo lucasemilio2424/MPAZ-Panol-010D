@@ -6,16 +6,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.room.withTransaction
 import cl.duoc.mpazpanol.data.database.AppDatabase
 import cl.duoc.mpazpanol.data.local.entity.EquipoEntity
 import cl.duoc.mpazpanol.data.local.entity.SolicitudEntity
 import cl.duoc.mpazpanol.data.local.entity.UsuarioEntity
+import cl.duoc.mpazpanol.data.remote.EquipoRemoto
+import cl.duoc.mpazpanol.data.remote.MotivoRechazo
+import cl.duoc.mpazpanol.data.remote.RetrofitBackend
+import cl.duoc.mpazpanol.data.remote.SolicitudRemota
 import cl.duoc.mpazpanol.platform.RecursosNativos
 import cl.duoc.mpazpanol.util.Passwords
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import retrofit2.HttpException
 
 class PanolViewModel : ViewModel() {
     var equipos by mutableStateOf<List<EquipoEntity>>(emptyList())
@@ -24,7 +28,7 @@ class PanolViewModel : ViewModel() {
         private set
     var usuarios by mutableStateOf<List<UsuarioEntity>>(emptyList())
         private set
-    var cargando by mutableStateOf(true)
+    var cargando by mutableStateOf(false)
         private set
     var mensaje by mutableStateOf<String?>(null)
         private set
@@ -36,36 +40,22 @@ class PanolViewModel : ViewModel() {
         inicializando = true
         viewModelScope.launch {
             try {
-                val db = AppDatabase.getDatabase(context)
-                val haceFaltaAdmin = withContext(Dispatchers.IO) {
-                    db.usuarioDao().buscarPorCorreo("admin@mpaz.cl") == null
-                }
-                if (haceFaltaAdmin) {
-                    val hash = withContext(Dispatchers.Default) { Passwords.hash("Admin123!") }
-                    withContext(Dispatchers.IO) {
-                        db.usuarioDao().insertar(UsuarioEntity(
-                            nombre = "Encargado del pañol", email = "admin@mpaz.cl",
-                            passwordHash = hash, rol = "ADMIN"
-                        ))
-                    }
-                }
                 withContext(Dispatchers.IO) {
-                    if (db.equipoDao().contar() == 0) {
-                        db.equipoDao().insertarTodos(listOf(
-                            EquipoEntity(nombre = "Proyector Epson", categoria = "Proyección", descripcion = "Proyector para salas de clases", ubicacion = "Estante A1", stockTotal = 5, stockDisponible = 5),
-                            EquipoEntity(nombre = "Notebook Lenovo", categoria = "Computación", descripcion = "Notebook para actividades docentes", ubicacion = "Gabinete B2", stockTotal = 8, stockDisponible = 8),
-                            EquipoEntity(nombre = "Parlante portátil", categoria = "Audio", descripcion = "Parlante para actividades escolares", ubicacion = "Estante A3", stockTotal = 4, stockDisponible = 4),
-                            EquipoEntity(nombre = "Kit LEGO WeDo 2.0", categoria = "Robótica", descripcion = "Kit educativo de robótica", ubicacion = "Gabinete C1", stockTotal = 3, stockDisponible = 3),
-                            EquipoEntity(nombre = "Placa ESP32", categoria = "Electrónica", descripcion = "Microcontrolador para talleres", ubicacion = "Gabinete C2", stockTotal = 6, stockDisponible = 6),
-                            EquipoEntity(nombre = "Alargador eléctrico", categoria = "Accesorios", descripcion = "Extensión eléctrica para salas", ubicacion = "Estante A4", stockTotal = 10, stockDisponible = 10)
-                        ))
+                    val dao = AppDatabase.getDatabase(context).usuarioDao()
+                    if (dao.buscarPorCorreo("admin@mpaz.cl") == null) {
+                        dao.insertar(
+                            UsuarioEntity(
+                                nombre = "Encargado del pañol",
+                                email = "admin@mpaz.cl",
+                                passwordHash = Passwords.hash("Admin123!"),
+                                rol = "ADMIN"
+                            )
+                        )
                     }
                 }
                 cargarDatos(context)
-            } catch (_: Exception) {
-                mensaje = "No se pudieron cargar los datos locales"
-            } finally {
-                cargando = false
+            } catch (e: Exception) {
+                mensaje = mensajeError(e)
             }
         }
     }
@@ -75,13 +65,24 @@ class PanolViewModel : ViewModel() {
     }
 
     private suspend fun cargarDatos(context: Context) {
-        val db = AppDatabase.getDatabase(context)
-        val datos = withContext(Dispatchers.IO) {
-            Triple(db.equipoDao().listar(), db.solicitudDao().listarTodas(), db.usuarioDao().listar())
+        cargando = true
+        try {
+            val datos = withContext(Dispatchers.IO) {
+                Triple(
+                    RetrofitBackend.equipos.listar(),
+                    RetrofitBackend.solicitudes.listar(),
+                    AppDatabase.getDatabase(context).usuarioDao().listar()
+                )
+            }
+            equipos = datos.first.map { it.aEntidad() }
+            solicitudes = datos.second.map { it.aEntidad() }
+            usuarios = datos.third
+            mensaje = null
+        } catch (e: Exception) {
+            mensaje = mensajeError(e)
+        } finally {
+            cargando = false
         }
-        equipos = datos.first
-        solicitudes = datos.second
-        usuarios = datos.third
     }
 
     fun nombreEquipo(id: Long): String = equipos.firstOrNull { it.id == id }?.nombre ?: "Equipo"
@@ -89,74 +90,75 @@ class PanolViewModel : ViewModel() {
     fun limpiarMensaje() { mensaje = null }
 
     fun aprobar(context: Context, solicitudId: Long) {
-        operar(context, solicitudId) { db, actual ->
-            if (actual.estado != "PENDIENTE") return@operar "Esta solicitud ya fue gestionada"
-            val equipo = db.equipoDao().buscar(actual.equipoId) ?: return@operar "Equipo no encontrado"
-            if (equipo.estado == "MANTENIMIENTO" || equipo.estado == "FUERA_SERVICIO") return@operar "Equipo fuera de servicio"
-            if (equipo.stockDisponible < actual.cantidad) return@operar "No hay suficientes unidades disponibles"
-            val restante = equipo.stockDisponible - actual.cantidad
-            db.equipoDao().actualizar(equipo.copy(stockDisponible = restante, estado = if (restante == 0) "RESERVADO" else "DISPONIBLE"))
-            db.solicitudDao().actualizar(actual.copy(estado = "APROBADA", aprobadaEn = System.currentTimeMillis()))
-            "Solicitud aprobada y stock actualizado"
+        gestionar(context, solicitudId, "aprobada") {
+            RetrofitBackend.solicitudes.aprobar(solicitudId)
         }
     }
 
     fun rechazar(context: Context, solicitudId: Long, motivo: String) {
         if (motivo.trim().length < 5) {
-            mensaje = "Escribe el motivo del rechazo (al menos 5 caracteres)"
+            mensaje = "Ingresa un motivo de al menos 5 caracteres"
             return
         }
-        operar(context, solicitudId) { db, actual ->
-            if (actual.estado != "PENDIENTE") return@operar "Esta solicitud ya fue gestionada"
-            db.solicitudDao().actualizar(actual.copy(estado = "RECHAZADA", motivoRechazo = motivo.trim()))
-            "Solicitud rechazada con justificación"
+        gestionar(context, solicitudId, "rechazada") {
+            RetrofitBackend.solicitudes.rechazar(solicitudId, MotivoRechazo(motivo.trim()))
         }
     }
 
     fun entregar(context: Context, solicitudId: Long) {
-        operar(context, solicitudId) { db, actual ->
-            if (actual.estado != "APROBADA") return@operar "Primero debes aprobar la solicitud"
-            db.solicitudDao().actualizar(actual.copy(estado = "ENTREGADA", entregadaEn = System.currentTimeMillis()))
-            "Entrega registrada"
+        gestionar(context, solicitudId, "entregada") {
+            RetrofitBackend.solicitudes.entregar(solicitudId)
         }
     }
 
     fun devolver(context: Context, solicitudId: Long) {
-        operar(context, solicitudId) { db, actual ->
-            if (actual.estado != "ENTREGADA") return@operar "Esta solicitud no está entregada"
-            val equipo = db.equipoDao().buscar(actual.equipoId) ?: return@operar "Equipo no encontrado"
-            db.equipoDao().actualizar(equipo.copy(
-                stockDisponible = (equipo.stockDisponible + actual.cantidad).coerceAtMost(equipo.stockTotal),
-                estado = "DISPONIBLE"
-            ))
-            db.solicitudDao().actualizar(actual.copy(estado = "DEVUELTA", devueltaEn = System.currentTimeMillis()))
-            "Devolución registrada y stock restaurado"
+        gestionar(context, solicitudId, "devuelta") {
+            RetrofitBackend.solicitudes.devolver(solicitudId)
         }
     }
 
-    private fun operar(
-        context: Context,
-        solicitudId: Long,
-        accion: suspend (AppDatabase, SolicitudEntity) -> String
-    ) {
+    private fun gestionar(context: Context, solicitudId: Long, resultado: String, accion: suspend () -> Unit) {
+        if (cargando) return
         viewModelScope.launch {
+            cargando = true
             try {
-                val resultado = withContext(Dispatchers.IO) {
-                    val db = AppDatabase.getDatabase(context)
-                    db.withTransaction {
-                        val actual = db.solicitudDao().buscar(solicitudId)
-                            ?: return@withTransaction "Solicitud no encontrada"
-                        accion(db, actual)
-                    }
-                }
-                mensaje = resultado
+                withContext(Dispatchers.IO) { accion() }
+                RecursosNativos.vibrarConfirmacion(context)
                 cargarDatos(context)
-                if (resultado.contains("registrad") || resultado.contains("aprobada") || resultado.contains("rechazada")) {
-                    RecursosNativos.vibrarConfirmacion(context)
-                }
-            } catch (_: Exception) {
-                mensaje = "No fue posible completar esta acción"
+                if (mensaje == null) mensaje = "Solicitud $resultado correctamente"
+            } catch (e: Exception) {
+                mensaje = mensajeError(e)
+            } finally {
+                cargando = false
             }
         }
+    }
+
+    private fun EquipoRemoto.aEntidad() = EquipoEntity(
+        id = id,
+        nombre = nombre,
+        categoria = categoria,
+        descripcion = descripcion,
+        ubicacion = ubicacion,
+        stockTotal = stockTotal,
+        stockDisponible = stockDisponible,
+        estado = estado
+    )
+
+    private fun SolicitudRemota.aEntidad() = SolicitudEntity(
+        id = id,
+        usuarioId = usuarioId,
+        equipoId = equipoId,
+        cantidad = cantidad,
+        sala = sala,
+        inicio = inicio,
+        devolucionEstimada = devolucionEstimada,
+        estado = estado,
+        motivoRechazo = motivoRechazo.orEmpty()
+    )
+
+    private fun mensajeError(error: Exception): String = when (error) {
+        is HttpException -> "No fue posible completar la operación (${error.code()})"
+        else -> "No se pudo conectar al pañol. Revisa que el servidor esté encendido"
     }
 }

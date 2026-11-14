@@ -39,6 +39,7 @@ object Routes {
     const val MIS_SOLICITUDES = "mis_solicitudes"
     const val ADMIN = "administracion"
 
+
     const val INVENTARIO = "inventario"
     const val FORMULARIO_EQUIPO = "formulario_equipo/{id}"
 }
@@ -141,6 +142,7 @@ fun AppNavigation() {
                         panol.actualizar(context)
                         nav.navigate(Routes.INVENTARIO)
                     },
+
 
                     onCerrarSesion = {
                         sesion.cerrar()
@@ -317,5 +319,6 @@ fun AppNavigation() {
                 Text("Acceso exclusivo del encargado")
             }
         }
+
     }
 }
