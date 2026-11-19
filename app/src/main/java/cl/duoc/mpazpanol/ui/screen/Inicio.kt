@@ -5,6 +5,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.viewmodel.compose.viewModel
+import cl.duoc.mpazpanol.ui.viewmodel.ClimaViewModel
 import androidx.compose.ui.platform.LocalContext
 import cl.duoc.mpazpanol.data.local.entity.UsuarioEntity
 import cl.duoc.mpazpanol.platform.RecursosNativos
@@ -26,6 +29,8 @@ fun Inicio(
     onCerrarSesion: () -> Unit
 ) {
     val context = LocalContext.current
+    val clima: ClimaViewModel = viewModel()
+    LaunchedEffect(Unit) { clima.cargar() }
     val bateria = RecursosNativos.bateriaPorcentaje(context)
     val pendientes = vm.solicitudes.count {
         it.estado == "PENDIENTE" && (usuario.rol == "ADMIN" || it.usuarioId == usuario.id)
@@ -59,6 +64,12 @@ fun Inicio(
             Text("Estado del dispositivo", style = MaterialTheme.typography.titleMedium)
             Text("Batería: ${bateria?.let { "$it%" } ?: "No disponible"}")
             Text("Comprueba la batería antes de registrar entregas prolongadas.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+
+        Tarjeta {
+            Text("Clima actual en Santiago", style = MaterialTheme.typography.titleMedium)
+            Text(clima.informacion)
+            OutlinedButton(onClick = { clima.cargar() }) { Text("Actualizar clima") }
         }
 
         OutlinedButton(onClick = onCerrarSesion) { Text("Cerrar sesión") }
