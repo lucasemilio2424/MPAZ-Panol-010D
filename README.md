@@ -57,10 +57,15 @@ Los datos de usuarios se almacenan localmente en Room/SQLite; equipos y solicitu
 La rama `experiencia3` contiene la integración cloud Android.
 
 ## Firma y APK
-- APK firmado: generar y adjuntar como entregable AVA en formato `app-release.apk`.
+- APK firmado de **release** generado el 19/11/2026: [descargar/consultar app-release.apk](app/release/app-release.apk) (aprox. 12,3 MB). Compilación de firma completada correctamente en Android Studio.
+- Evidencia de Git: commit de APK `0865fd2` en rama `experiencia3` ([ver commit](https://github.com/lucasemilio2424/MPAZ-Panol-010D/commit/0865fd2)).
+- Entrega preparada por el estudiante: `MPAZ_Panol_Android.zip`, `MPAZ_Panol_Backend.zip`, `MPAZ_Panol_Diagramas.zip` y APK firmada, para adjuntar en AVA.
 - Archivo de firma: `MPAZ_Panol_Release.jks`; conservar en equipo local seguro y entregar al docente únicamente por medio privado si lo exige.
 - No publicar claves privadas, contraseñas ni archivos `.jks` en GitHub público.
-- Captura de la ventana de generación del APK y del archivo generado: adjuntar como evidencia.
+- Evidencia visual de generación y ubicación de `app-release.apk`, y de la creación del `.jks`: adjuntar capturas en la entrega de AVA. No publicar pantallas que revelen contraseñas.
+- Diagrama de microservicios: [ver imagen](https://github.com/lucasemilio2424/MPAZ-Panol-010D/blob/documents/docs/01-diagrama-microservicios.png).
+- Diagrama Android MVVM: [ver imagen](https://github.com/lucasemilio2424/MPAZ-Panol-010D/blob/documents/docs/02-diagrama-android-mvvm.png).
+- Enlace al tablero de Trello: https://trello.com/b/708Ixk0p/mpaz-panol-010d.
 
 ## Pruebas y alcance
 - Backend: se han ejecutado 9 pruebas JUnit con éxito.
