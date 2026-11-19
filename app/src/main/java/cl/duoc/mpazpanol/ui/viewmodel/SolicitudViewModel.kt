@@ -11,6 +11,7 @@ import cl.duoc.mpazpanol.data.remote.RetrofitBackend
 import cl.duoc.mpazpanol.data.remote.SolicitudNueva
 import cl.duoc.mpazpanol.model.SolicitudModel
 import cl.duoc.mpazpanol.platform.RecursosNativos
+import cl.duoc.mpazpanol.util.ReglasSolicitud
 import java.text.SimpleDateFormat
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
@@ -51,23 +52,13 @@ class SolicitudViewModel : ViewModel() {
         if (estado.guardando) return
         val equipo = equipos.firstOrNull { it.id == estado.equipoId }
         val cantidad = estado.cantidad.toIntOrNull()
-        val cantidadError = when {
-            equipo == null -> "Selecciona un equipo"
-            cantidad == null || cantidad < 1 -> "Indica al menos una unidad"
-            equipo.estado != "DISPONIBLE" -> "El equipo no está disponible"
-            cantidad > equipo.stockDisponible -> "Solo hay ${equipo.stockDisponible} unidades disponibles"
-            else -> null
-        }
-        val salaError = if (estado.sala.trim().length < 2) "Indica la sala o laboratorio" else null
+        val cantidadError = if (equipo == null) "Selecciona un equipo"
+        else ReglasSolicitud.errorCantidad(cantidad, equipo.stockDisponible, equipo.estado)
+        val salaError = ReglasSolicitud.errorSala(estado.sala)
         val formato = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale("es", "CL")).apply { isLenient = false }
         val inicio = runCatching { formato.parse("${estado.fecha} ${estado.horaInicio}")?.time }.getOrNull()
         val fin = runCatching { formato.parse("${estado.fecha} ${estado.horaFin}")?.time }.getOrNull()
-        val horarioError = when {
-            inicio == null || fin == null -> "Selecciona fecha, hora de inicio y devolución"
-            inicio < System.currentTimeMillis() + 3 * 60 * 60 * 1000L -> "Solicita con al menos 3 horas de anticipación"
-            fin <= inicio -> "La devolución debe ser posterior al inicio"
-            else -> null
-        }
+        val horarioError = ReglasSolicitud.errorHorario(inicio, fin, System.currentTimeMillis())
 
         uiState = estado.copy(cantidadError = cantidadError, salaError = salaError, horarioError = horarioError)
         if (cantidadError != null || salaError != null || horarioError != null || cantidad == null || inicio == null || fin == null) return
